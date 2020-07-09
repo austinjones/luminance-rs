@@ -140,6 +140,8 @@ impl WebGL2State {
     let face_culling_state = get_ctx_face_culling_state(&mut ctx);
     let face_culling_order = get_ctx_face_culling_order(&mut ctx)?;
     let face_culling_mode = get_ctx_face_culling_mode(&mut ctx)?;
+    load_webgl_extensions(&mut ctx)?;
+
     let current_texture_unit = 0;
     let bound_textures = vec![(WebGl2RenderingContext::TEXTURE0, None); 48]; // 48 is the platform minimal requirement
     let texture_swimming_pool = Vec::new();
@@ -557,6 +559,8 @@ pub enum StateQueryError {
   CannotRetrieveBlendingDstFactorRGB,
   /// Destination alpha factor couldn’t be retrieved when initializing the WebGL2 state.
   CannotRetrieveBlendingDstFactorAlpha,
+  /// Required WebGL extensions cannot be enabled
+  CannotRetrieveRequiredWebGLExtensions(Vec<String>),
   /// Corrupted blending source factor (RGB).
   UnknownBlendingSrcFactorRGB(u32),
   /// Corrupted blending source factor (alpha).
@@ -612,6 +616,12 @@ impl fmt::Display for StateQueryError {
 
       StateQueryError::CannotRetrieveBlendingDstFactorAlpha => {
         f.write_str("cannot retrieve blending destination factor (alpha)")
+      }
+
+      StateQueryError::CannotRetrieveRequiredWebGLExtensions(ref extensions) => {
+        f.write_str("missing WebGL extensions: [")?;
+        f.write_str(extensions.join(", ").as_str())?;
+        f.write_str("]")
       }
 
       StateQueryError::UnknownBlendingSrcFactorRGB(ref k) => {
@@ -797,6 +807,24 @@ fn get_ctx_face_culling_mode(
     WebGl2RenderingContext::BACK => Ok(FaceCullingMode::Back),
     WebGl2RenderingContext::FRONT_AND_BACK => Ok(FaceCullingMode::Both),
     _ => Err(StateQueryError::UnknownFaceCullingMode),
+  }
+}
+
+fn load_webgl_extensions(ctx: &mut WebGl2RenderingContext) -> Result<(), StateQueryError> {
+  let required_extensions = vec!["OES_texture_float_linear", "EXT_color_buffer_float"];
+
+  let missing_extensions: Vec<String> = required_extensions
+    .into_iter()
+    .map(|ext| (ext, ctx.get_extension(ext)))
+    .filter(|(_, object)| object.is_err() || object.as_ref().unwrap().is_none())
+    .map(|(ext, _)| ext.to_string())
+    .collect();
+
+  match missing_extensions.len() {
+    0 => Ok(()),
+    _ => Err(StateQueryError::CannotRetrieveRequiredWebGLExtensions(
+      missing_extensions,
+    )),
   }
 }
 
